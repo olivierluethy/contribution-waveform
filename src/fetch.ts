@@ -109,19 +109,34 @@ export async function fetchContributions(
   const createdAt = bootstrap.createdAt;
   const byDate = new Map<string, number>();
 
-  const absorb = (user: GraphQLUser): void => {
-    const weeks = user.contributionsCollection?.contributionCalendar.weeks ?? [];
-    for (const week of weeks) {
+  // A missing/malformed `contributionsCollection` means the response shape
+  // didn't match what the query asked for. That should never happen against
+  // GitHub's real schema, but silently treating it as "zero contributions"
+  // would let a blank waveform get committed over real history, so it's
+  // better to fail loudly and name the window that produced the bad response.
+  const absorb = (user: GraphQLUser, window: { from: string; to: string }): void => {
+    const calendar = user.contributionsCollection?.contributionCalendar;
+    if (!calendar || !Array.isArray(calendar.weeks)) {
+      throw new Error(
+        `GitHub API response for window ${window.from} to ${window.to} is missing contributionsCollection data`,
+      );
+    }
+    for (const week of calendar.weeks) {
       for (const day of week.contributionDays) {
         byDate.set(day.date, day.contributionCount);
       }
     }
   };
 
-  absorb(bootstrap);
+  absorb(bootstrap, firstWindow);
 
   for (const window of yearWindows(createdAt, today)) {
-    if (window.from === firstWindow.from && window.to === firstWindow.to) continue;
+    // `firstWindow` and `window` are ISO-8601 UTC timestamps ("YYYY-MM-DDTHH:mm:ssZ"),
+    // which sort lexically the same as chronologically, so plain string
+    // comparison correctly tests whether `window` is fully covered by the
+    // bootstrap window (not just equal to it, which misses same-year accounts
+    // whose single window starts mid-year rather than on January 1).
+    if (window.from >= firstWindow.from && window.to <= firstWindow.to) continue;
     absorb(
       await query(
         { query: CALENDAR_QUERY, variables: { login, ...window } },
@@ -129,6 +144,7 @@ export async function fetchContributions(
         login,
         fetchImpl,
       ),
+      window,
     );
   }
 

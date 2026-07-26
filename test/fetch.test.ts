@@ -118,4 +118,77 @@ describe('fetchContributions', () => {
       /nobody/,
     );
   });
+
+  it('throws instead of silently returning zero days when contributionsCollection is missing', async () => {
+    const fake = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          user: {
+            createdAt: '2023-11-01T00:00:00Z',
+            // contributionsCollection intentionally absent: malformed/unexpected response shape.
+          },
+        },
+      }),
+    })) as unknown as typeof fetch;
+
+    await expect(fetchContributions('octocat', 'tok', '2023-12-31', fake)).rejects.toThrow(
+      /contributionsCollection/,
+    );
+  });
+
+  it('issues exactly one call per historical year plus the bootstrap for a multi-year account, skipping the duplicate', async () => {
+    const responses = [
+      calendarResponse([]), // bootstrap: 2024-01-01 -> 2024-03-01 (createdAt 2023-11-01)
+      calendarResponse([]), // 2023-11-01 -> 2023-12-31
+    ];
+    let call = 0;
+    const fake = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => responses[call++]!,
+    })) as unknown as typeof fetch;
+
+    await fetchContributions('octocat', 'tok', '2024-03-01', fake);
+
+    expect(fake).toHaveBeenCalledTimes(2);
+
+    const bodyOf = (n: number) =>
+      JSON.parse((fake.mock.calls[n]![1] as RequestInit).body as string) as {
+        variables: { login: string; from: string; to: string };
+      };
+
+    expect(bodyOf(0).variables).toEqual({
+      login: 'octocat',
+      from: '2024-01-01T00:00:00Z',
+      to: '2024-03-01T23:59:59Z',
+    });
+    expect(bodyOf(1).variables).toEqual({
+      login: 'octocat',
+      from: '2023-11-01T00:00:00Z',
+      to: '2023-12-31T23:59:59Z',
+    });
+  });
+
+  it('issues only the bootstrap call for a same-year account, without a duplicate request', async () => {
+    const fake = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => calendarResponse([{ date: '2023-12-31', contributionCount: 1 }]),
+    })) as unknown as typeof fetch;
+
+    await fetchContributions('octocat', 'secret-token', '2023-12-31', fake);
+
+    expect(fake).toHaveBeenCalledTimes(1);
+
+    const body = JSON.parse((fake.mock.calls[0]![1] as RequestInit).body as string) as {
+      variables: { login: string; from: string; to: string };
+    };
+    expect(body.variables).toEqual({
+      login: 'octocat',
+      from: '2023-01-01T00:00:00Z',
+      to: '2023-12-31T23:59:59Z',
+    });
+  });
 });
