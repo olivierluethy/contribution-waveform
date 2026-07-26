@@ -39,10 +39,15 @@ function clipEdges(svg: string): Record<string, number> {
   return edges;
 }
 
-/** Maps each clip-path id to the fill colour of the path that references it. */
+/**
+ * Maps each clip-path id to the fill colour of the element that references
+ * it. The deviation bands are defined once in `<defs>` and drawn via
+ * `<use href="#...">`, so the fill/clip-path presentation attributes live on
+ * the `<use>` element rather than a `<path>`.
+ */
 function fillByClip(svg: string): Record<string, string> {
   const map: Record<string, string> = {};
-  for (const m of svg.matchAll(/<path[^>]*\sfill="([^"]+)"[^>]*\sclip-path="url\(#([^)]+)\)"/g)) {
+  for (const m of svg.matchAll(/<use[^>]*\sfill="([^"]+)"[^>]*\sclip-path="url\(#([^)]+)\)"/g)) {
     map[m[2]!] = m[1]!;
   }
   return map;

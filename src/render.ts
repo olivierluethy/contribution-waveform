@@ -100,7 +100,9 @@ export function renderPanel(opts: PanelOptions): string {
     points.map((p, i) => ({ x: xAt(i), y: toY(norm(values(p))) }));
 
   const parts: string[] = [];
-  const clips: string[] = [];
+  // Holds both `<clipPath>` definitions and the once-emitted `<path>`s that
+  // `<use>` re-instantiates below — everything that belongs in `<defs>`.
+  const defs: string[] = [];
   const bottom = rect.y + rect.height;
   const centre = rect.y + rect.height / 2;
 
@@ -119,7 +121,7 @@ export function renderPanel(opts: PanelOptions): string {
     const avg7Up = at((p) => p.avg7, up);
     const avg7Down = at((p) => p.avg7, down);
 
-    clips.push(
+    defs.push(
       `<clipPath id="${idPrefix}-above"><path d="${areaPath(baseUp, rect.y)}"/></clipPath>`,
       `<clipPath id="${idPrefix}-below"><path d="${areaPath(baseUp, centre)}"/></clipPath>`,
       `<clipPath id="${idPrefix}-above-m"><path d="${areaPath(baseDown, bottom)}"/></clipPath>`,
@@ -135,13 +137,28 @@ export function renderPanel(opts: PanelOptions): string {
     // before the 7-day and daily strokes: the fill's top edge is the daily
     // curve itself, so drawing it on top would lay accent across the wave's
     // own stroke and mute the outline.
-    const upperBand = bandPath(dailyUp, baseUp);
-    const lowerBand = bandPath(baseDown, dailyDown);
+    //
+    // Each half's `d` data is identical whether it ends up filled with the
+    // accent (above) or the muted colour (below) — only the clip and fill
+    // differ. Emitting the path data twice roughly doubled file size for no
+    // visual benefit, so it is defined once in `<defs>` and referenced twice
+    // with plain, untransformed `<use href="#...">` — the fill/opacity/clip
+    // presentation attributes live on the `<use>` element and apply to the
+    // referenced (fill-less) path. This is unrelated to — and much lower-risk
+    // than — using `<use>` for the mirror reflection itself, which the
+    // design deliberately still avoids by emitting both halves as explicit
+    // paths (renderer quirks with transformed `<use>`).
+    const upperId = `${idPrefix}-up-band`;
+    const lowerId = `${idPrefix}-dn-band`;
+    defs.push(
+      `<path id="${upperId}" d="${bandPath(dailyUp, baseUp)}"/>`,
+      `<path id="${lowerId}" d="${bandPath(baseDown, dailyDown)}"/>`,
+    );
     parts.push(
-      `<path class="wf-fade" d="${upperBand}" fill="${t.above}" fill-opacity="${t.aboveOpacity}" clip-path="url(#${idPrefix}-above)"/>`,
-      `<path class="wf-fade" d="${upperBand}" fill="${t.below}" fill-opacity="${t.belowOpacity}" clip-path="url(#${idPrefix}-below)"/>`,
-      `<path class="wf-fade" d="${lowerBand}" fill="${t.above}" fill-opacity="${t.aboveOpacity}" clip-path="url(#${idPrefix}-above-m)"/>`,
-      `<path class="wf-fade" d="${lowerBand}" fill="${t.below}" fill-opacity="${t.belowOpacity}" clip-path="url(#${idPrefix}-below-m)"/>`,
+      `<use href="#${upperId}" class="wf-fade" fill="${t.above}" fill-opacity="${t.aboveOpacity}" clip-path="url(#${idPrefix}-above)"/>`,
+      `<use href="#${upperId}" class="wf-fade" fill="${t.below}" fill-opacity="${t.belowOpacity}" clip-path="url(#${idPrefix}-below)"/>`,
+      `<use href="#${lowerId}" class="wf-fade" fill="${t.above}" fill-opacity="${t.aboveOpacity}" clip-path="url(#${idPrefix}-above-m)"/>`,
+      `<use href="#${lowerId}" class="wf-fade" fill="${t.below}" fill-opacity="${t.belowOpacity}" clip-path="url(#${idPrefix}-below-m)"/>`,
     );
 
     // 3. rolling 7-day line
@@ -164,7 +181,7 @@ export function renderPanel(opts: PanelOptions): string {
     const base = at((p) => p.avg30, toY);
     const avg7 = at((p) => p.avg7, toY);
 
-    clips.push(
+    defs.push(
       `<clipPath id="${idPrefix}-above"><path d="${areaPath(base, rect.y)}"/></clipPath>`,
       `<clipPath id="${idPrefix}-below"><path d="${areaPath(base, bottom)}"/></clipPath>`,
     );
@@ -177,11 +194,13 @@ export function renderPanel(opts: PanelOptions): string {
     // 2. deviation fill, split above/below by clip. Painted before the
     // 7-day and daily strokes: the fill's top edge is the daily curve
     // itself, so drawing it on top would lay accent across the wave's own
-    // stroke and mute the outline.
-    const band = bandPath(daily, base);
+    // stroke and mute the outline. Same identical-data-twice situation as
+    // the mirrored branch above: define once, reference twice via `<use>`.
+    const bandId = `${idPrefix}-band`;
+    defs.push(`<path id="${bandId}" d="${bandPath(daily, base)}"/>`);
     parts.push(
-      `<path class="wf-fade" d="${band}" fill="${t.above}" fill-opacity="${t.aboveOpacity}" clip-path="url(#${idPrefix}-above)"/>`,
-      `<path class="wf-fade" d="${band}" fill="${t.below}" fill-opacity="${t.belowOpacity}" clip-path="url(#${idPrefix}-below)"/>`,
+      `<use href="#${bandId}" class="wf-fade" fill="${t.above}" fill-opacity="${t.aboveOpacity}" clip-path="url(#${idPrefix}-above)"/>`,
+      `<use href="#${bandId}" class="wf-fade" fill="${t.below}" fill-opacity="${t.belowOpacity}" clip-path="url(#${idPrefix}-below)"/>`,
     );
 
     // 3. rolling 7-day line
@@ -198,7 +217,7 @@ export function renderPanel(opts: PanelOptions): string {
     if (showPeaks) parts.push(peakMarkers(series, xAt, (p) => toY(norm(p)), rect, t));
   }
 
-  return `<defs>${clips.join('')}</defs>${parts.join('')}`;
+  return `<defs>${defs.join('')}</defs>${parts.join('')}`;
 }
 
 function peakMarkers(
