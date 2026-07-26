@@ -226,7 +226,7 @@ function peakMarkers(
       return (
         `<circle class="wf-fade" cx="${round(x)}" cy="${round(y)}" r="2.5" fill="${t.peak}"/>` +
         `<text class="wf-fade" x="${round(x)}" y="${round(labelY)}" text-anchor="${anchor}" ` +
-        `font-family="${FONT_STACK}" font-size="9" fill="${t.textDim}">${peak.count}</text>`
+        `font-family="${escapeXml(FONT_STACK)}" font-size="9" fill="${t.textDim}">${peak.count}</text>`
       );
     })
     .join('');
@@ -260,7 +260,7 @@ function textEl(
   anchor = 'start',
 ): string {
   return (
-    `<text x="${round(x)}" y="${round(y)}" text-anchor="${anchor}" font-family="${FONT_STACK}" ` +
+    `<text x="${round(x)}" y="${round(y)}" text-anchor="${anchor}" font-family="${escapeXml(FONT_STACK)}" ` +
     `font-size="${size}" fill="${fill}">${content}</text>`
   );
 }
