@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
+  buildSeries,
+  findPeaks,
   percentile,
   rollingAverage,
   scaleMaxFor,
   todayIn,
 } from '../src/transform.js';
+import type { PlotPoint } from '../src/transform.js';
 
 describe('todayIn', () => {
   it('formats the local date in the given zone', () => {
@@ -93,5 +96,99 @@ describe('scaleMaxFor', () => {
 
   it('falls back to 1 for empty input', () => {
     expect(scaleMaxFor([])).toBe(1);
+  });
+});
+
+function days(from: string, counts: number[]) {
+  return counts.map((count, i) => ({ date: addDays(from, i), count }));
+}
+
+/**
+ * `findPeaks` measures separation in array positions, which equals days only
+ * because real series are contiguous. Build test points the same way.
+ */
+function contiguous(counts: number[], from = '2024-01-01'): PlotPoint[] {
+  return days(from, counts).map((d) => ({
+    date: d.date,
+    count: d.count,
+    clamped: d.count,
+    avg7: d.count,
+    avg30: d.count,
+  }));
+}
+
+describe('findPeaks', () => {
+  it('picks the highest days', () => {
+    expect(findPeaks(contiguous([1, 9, 4]), 2, 1).map((p) => p.count)).toEqual([9, 4]);
+  });
+
+  it('returns peaks in chronological order', () => {
+    const points = contiguous([4, ...Array.from({ length: 18 }, () => 0), 9]);
+    expect(findPeaks(points, 2).map((p) => p.date)).toEqual(['2024-01-01', '2024-01-20']);
+  });
+
+  it('enforces a minimum separation so one spike does not take every marker', () => {
+    // Three adjacent big days, then isolated smaller ones a week apart.
+    const points = contiguous([10, 9, 8, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 4]);
+    expect(findPeaks(points, 3).map((p) => p.date)).toEqual([
+      '2024-01-01',
+      '2024-01-08',
+      '2024-01-15',
+    ]);
+  });
+
+  it('ignores zero-contribution days', () => {
+    expect(findPeaks(contiguous([0, 0]), 3)).toEqual([]);
+  });
+
+  it('returns nothing when asked for zero peaks', () => {
+    expect(findPeaks(contiguous([5]), 0)).toEqual([]);
+  });
+});
+
+describe('buildSeries', () => {
+  it('slices the window and keeps raw counts', () => {
+    const series = buildSeries(days('2024-01-01', [1, 2, 3, 4, 5]), '2024-01-02', '2024-01-04', 3);
+    expect(series.points.map((p) => p.date)).toEqual(['2024-01-02', '2024-01-03', '2024-01-04']);
+    expect(series.points.map((p) => p.count)).toEqual([2, 3, 4]);
+    expect(series.total).toBe(9);
+    expect(series.from).toBe('2024-01-02');
+    expect(series.to).toBe('2024-01-04');
+  });
+
+  it('seeds rolling averages from history before the window', () => {
+    // 30 days of 10 precede the window. On the window's first day the 30-day
+    // average must still reflect those 10s (29 of them plus this 0 = 290/30),
+    // not restart from zero at the window edge.
+    const history = days('2024-01-01', Array.from({ length: 30 }, () => 10));
+    const window = days('2024-01-31', [0, 0, 0, 0, 0, 0, 0, 0, 0, 20]);
+    const series = buildSeries([...history, ...window], '2024-01-31', '2024-02-09', 3);
+    expect(series.points).toHaveLength(10);
+    expect(series.points[0]!.avg30).toBeCloseTo(290 / 30, 5);
+  });
+
+  it('clamps values above the 98th percentile', () => {
+    const counts = [...Array.from({ length: 99 }, () => 2), 200];
+    const series = buildSeries(days('2024-01-01', counts), '2024-01-01', addDays('2024-01-01', 99), 3);
+    expect(series.scaleMax).toBe(2);
+    expect(series.points[99]!.clamped).toBe(2);
+    expect(series.points[99]!.count).toBe(200);
+    expect(series.max).toBe(200);
+  });
+
+  it('never returns a zero scaleMax for an all-zero user', () => {
+    const series = buildSeries(days('2024-01-01', [0, 0, 0]), '2024-01-01', '2024-01-03', 3);
+    expect(series.scaleMax).toBe(1);
+    expect(series.max).toBe(0);
+    expect(series.total).toBe(0);
+    expect(series.peaks).toEqual([]);
+  });
+
+  it('handles an empty history without throwing', () => {
+    const series = buildSeries([], '2024-01-01', '2024-12-31', 3);
+    expect(series.points).toEqual([]);
+    expect(series.scaleMax).toBe(1);
+    expect(series.from).toBe('2024-01-01');
+    expect(series.to).toBe('2024-12-31');
   });
 });

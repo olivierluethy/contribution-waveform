@@ -55,3 +55,93 @@ export function scaleMaxFor(values: number[]): number {
   const max = values.reduce((a, b) => (b > a ? b : a), 0);
   return max > 0 ? max : 1;
 }
+
+export interface PlotPoint {
+  date: string;
+  /** Raw contribution count. */
+  count: number;
+  /** Count clipped to `scaleMax`. */
+  clamped: number;
+  avg7: number;
+  avg30: number;
+}
+
+export interface Peak {
+  index: number;
+  date: string;
+  count: number;
+}
+
+export interface PlotSeries {
+  points: PlotPoint[];
+  /** Y-axis top: the 98th percentile of the window. Always > 0. */
+  scaleMax: number;
+  /** Highest raw count in the window, for the corner label. */
+  max: number;
+  total: number;
+  from: string;
+  to: string;
+  peaks: Peak[];
+}
+
+/**
+ * Top `count` days, forced at least `minSeparation` days apart so three markers
+ * cannot stack on a single spike. Returned in chronological order.
+ */
+export function findPeaks(points: PlotPoint[], count: number, minSeparation = 7): Peak[] {
+  const chosen: Peak[] = [];
+  const candidates = points
+    .map((p, index) => ({ index, date: p.date, count: p.count }))
+    .filter((c) => c.count > 0)
+    .sort((a, b) => b.count - a.count || a.index - b.index);
+
+  for (const candidate of candidates) {
+    if (chosen.length >= count) break;
+    if (chosen.some((k) => Math.abs(k.index - candidate.index) < minSeparation)) continue;
+    chosen.push(candidate);
+  }
+  return chosen.sort((a, b) => a.index - b.index);
+}
+
+/**
+ * Build a plottable window. Rolling averages are computed across the *whole*
+ * history and sliced afterwards, so the left edge of a trailing-365 window is
+ * seeded by the preceding month instead of ramping up from zero.
+ */
+export function buildSeries(
+  all: ContributionDay[],
+  from: string,
+  to: string,
+  peakCount: number,
+): PlotSeries {
+  const counts = all.map((d) => d.count);
+  const avg7 = rollingAverage(counts, 7);
+  const avg30 = rollingAverage(counts, 30);
+
+  const indices: number[] = [];
+  for (let i = 0; i < all.length; i++) {
+    const date = all[i]!.date;
+    if (date >= from && date <= to) indices.push(i);
+  }
+
+  const windowCounts = indices.map((i) => counts[i]!);
+  const scaleMax = scaleMaxFor(windowCounts);
+
+  const points: PlotPoint[] = indices.map((i) => ({
+    date: all[i]!.date,
+    count: counts[i]!,
+    clamped: Math.min(counts[i]!, scaleMax),
+    avg7: Math.min(avg7[i]!, scaleMax),
+    avg30: Math.min(avg30[i]!, scaleMax),
+  }));
+
+  return {
+    points,
+    scaleMax,
+    max: windowCounts.reduce((a, b) => (b > a ? b : a), 0),
+    total: windowCounts.reduce((a, b) => a + b, 0),
+    from: points[0]?.date ?? from,
+    to: points[points.length - 1]?.date ?? to,
+    peaks: findPeaks(points, peakCount),
+  };
+}
