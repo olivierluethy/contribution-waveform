@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { buildSeries, addDays } from '../src/transform.js';
 import type { ContributionDay } from '../src/transform.js';
-import { theme, YEAR_GEOMETRY } from '../src/themes.js';
-import { ANIMATION_CSS, escapeXml, monthTicks, renderPanel } from '../src/render.js';
+import { theme, YEAR_GEOMETRY, MONTH_GEOMETRY, allYearsHeight } from '../src/themes.js';
+import {
+  ANIMATION_CSS,
+  escapeXml,
+  monthTicks,
+  renderAllYears,
+  renderPanel,
+  renderWave,
+  xAtFor,
+} from '../src/render.js';
 
 const NON_FINITE = /NaN|Infinity|undefined/;
 const RECT = { x: 44, y: 26, width: 816, height: 144 };
@@ -252,6 +260,23 @@ describe('renderPanel', () => {
   });
 });
 
+describe('xAtFor', () => {
+  it('centres a single point', () => {
+    expect(xAtFor(RECT, 1)(0)).toBe(RECT.x + RECT.width / 2);
+  });
+
+  it('centres a zero-length series the same way', () => {
+    expect(xAtFor(RECT, 0)(0)).toBe(RECT.x + RECT.width / 2);
+  });
+
+  it('spreads multiple points evenly from the left edge to the right edge', () => {
+    const xAt = xAtFor(RECT, 5);
+    expect(xAt(0)).toBe(RECT.x);
+    expect(xAt(4)).toBe(RECT.x + RECT.width);
+    expect(xAt(2)).toBe(RECT.x + RECT.width / 2);
+  });
+});
+
 describe('monthTicks', () => {
   const xAt = (i: number) => i * 10;
 
@@ -290,9 +315,6 @@ describe('ANIMATION_CSS', () => {
     expect(ANIMATION_CSS).not.toMatch(/@import|url\(|http/);
   });
 });
-
-import { renderAllYears, renderWave } from '../src/render.js';
-import { MONTH_GEOMETRY, allYearsHeight } from '../src/themes.js';
 
 describe('renderWave', () => {
   const base = {
@@ -344,6 +366,32 @@ describe('renderWave', () => {
     expect(svg).not.toContain('@a<b&c');
   });
 
+  it('escapes a double quote (and other metacharacters) in the username reaching aria-label', () => {
+    // A raw '"' here would terminate the aria-label attribute early and
+    // corrupt the root element. escapeXml already handles this correctly;
+    // this test guards that against regression.
+    const hostile = `a"b<c&d'e`;
+    const svg = renderWave({ ...base, username: hostile, series: series([1, 2]) });
+    const expectedTitle = escapeXml(
+      `${base.label} of GitHub contributions for ${hostile} as a waveform`,
+    );
+
+    // The root element must still parse as a single well-formed open tag:
+    // the expected attributes, in order, closed immediately by '>'.
+    const rootMatch = svg.match(
+      /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 880 220" preserveAspectRatio="xMidYMid meet" role="img" aria-label="([^"]*)">/,
+    );
+    expect(rootMatch).not.toBeNull();
+    const ariaValue = rootMatch![1]!;
+
+    expect(ariaValue).toBe(expectedTitle);
+    expect(ariaValue).not.toContain('"');
+    expect(ariaValue).toContain('&quot;');
+    expect(ariaValue).toContain('&lt;');
+    expect(ariaValue).toContain('&amp;');
+    expect(ariaValue).toContain('&apos;');
+  });
+
   it('renders a zero-contribution user without non-finite numbers', () => {
     const svg = renderWave({ ...base, series: series(Array.from({ length: 365 }, () => 0)) });
     expect(svg).not.toMatch(NON_FINITE);
@@ -366,6 +414,49 @@ describe('renderWave', () => {
     const svg = renderWave({ ...base, series: series([1, 2, 3]) });
     expect(svg).toContain('<title>');
     expect(svg).toContain('role="img"');
+  });
+});
+
+describe('shared x-projection contract', () => {
+  it("renderWave's month tick lands exactly where renderPanel's curve places the same index", () => {
+    // Index 2 (2024-01-01) is both a month start and, with this count
+    // pattern, the single detected peak (minSeparation=7 exceeds this
+    // 5-point window, so only the highest-count day is chosen). That makes
+    // its x coordinate independently observable from two different
+    // production code paths for the very same rect and point count:
+    // renderPanel's peak marker (which shares the exact `xAt` closure used
+    // to place the curve itself) and renderWave's rendered "Jan" tick
+    // (which comes from monthTicks fed by `xAtFor`). If the two projections
+    // ever drift apart — say `renderPanel` grows padding that `xAtFor`
+    // doesn't get, or a hand-rolled closure creeps back into either call
+    // site — these two numbers stop matching and this test fails.
+    const s = series([1, 1, 9, 1, 1], '2023-12-30');
+
+    const panelSvg = renderPanel({
+      series: s,
+      theme: T,
+      mirror: false,
+      rect: RECT, // equals the rect YEAR_GEOMETRY derives below
+      idPrefix: 'sync',
+      showPeaks: true,
+    });
+    const peakMatch = panelSvg.match(/<circle[^>]*\scx="(-?\d+(?:\.\d+)?)"/);
+    expect(peakMatch).not.toBeNull();
+    const peakX = Number(peakMatch![1]);
+
+    const waveSvg = renderWave({
+      theme: T,
+      username: 'x',
+      mirror: false,
+      geometry: YEAR_GEOMETRY,
+      label: 'Trailing year',
+      series: s,
+    });
+    const tickMatch = waveSvg.match(/<text x="(-?\d+(?:\.\d+)?)"[^>]*>Jan<\/text>/);
+    expect(tickMatch).not.toBeNull();
+    const tickX = Number(tickMatch![1]);
+
+    expect(tickX).toBe(peakX);
   });
 });
 
@@ -412,5 +503,41 @@ describe('renderAllYears', () => {
     const svg = renderAllYears({ ...base, rows: [], total: 0 });
     expect(svg).toContain('</svg>');
     expect(svg).not.toMatch(NON_FINITE);
+  });
+
+  it('escapes a username containing XML metacharacters in the footer', () => {
+    const svg = renderAllYears({ ...base, username: 'a<b&c' });
+    expect(svg).toContain('@a&lt;b&amp;c');
+    expect(svg).not.toContain('@a<b&c');
+  });
+
+  it('escapes a double quote (and other metacharacters) in the username reaching aria-label', () => {
+    // Same hazard as renderWave: a raw '"' here would terminate the
+    // aria-label attribute early and corrupt the root element. renderAllYears
+    // has no dedicated test of its own for this — it relies entirely on
+    // svgOpen/escapeXml being shared with renderWave, which this pins here
+    // directly.
+    const hostile = `a"b<c&d'e`;
+    const svg = renderAllYears({ ...base, username: hostile });
+    const expectedTitle = escapeXml(
+      `All years of GitHub contributions for ${hostile} as a waveform`,
+    );
+    const height = allYearsHeight(rows.length);
+
+    const rootMatch = svg.match(
+      new RegExp(
+        `^<svg xmlns="http://www\\.w3\\.org/2000/svg" viewBox="0 0 880 ${height}" ` +
+          `preserveAspectRatio="xMidYMid meet" role="img" aria-label="([^"]*)">`,
+      ),
+    );
+    expect(rootMatch).not.toBeNull();
+    const ariaValue = rootMatch![1]!;
+
+    expect(ariaValue).toBe(expectedTitle);
+    expect(ariaValue).not.toContain('"');
+    expect(ariaValue).toContain('&quot;');
+    expect(ariaValue).toContain('&lt;');
+    expect(ariaValue).toContain('&amp;');
+    expect(ariaValue).toContain('&apos;');
   });
 });

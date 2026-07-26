@@ -51,6 +51,17 @@ export interface PanelOptions {
   showPeaks: boolean;
 }
 
+/**
+ * Projects point index `i` (of `n` total points) onto the x-axis of `rect`.
+ * Shared by `renderPanel` (for the curve itself) and `renderWave` (for month
+ * tick labels), so the two always agree on where a given day sits — a label
+ * can never drift from the point it names.
+ */
+export function xAtFor(rect: PanelRect, n: number): (i: number) => number {
+  return (i: number): number =>
+    n <= 1 ? rect.x + rect.width / 2 : rect.x + (i * rect.width) / (n - 1);
+}
+
 /** Month tick positions. The first point is always labelled so a 31-day window is never bare. */
 export function monthTicks(
   points: PlotPoint[],
@@ -80,8 +91,7 @@ export function renderPanel(opts: PanelOptions): string {
   const n = points.length;
   if (n === 0) return '';
 
-  const xAt = (i: number): number =>
-    n <= 1 ? rect.x + rect.width / 2 : rect.x + (i * rect.width) / (n - 1);
+  const xAt = xAtFor(rect, n);
 
   /** Fraction of the plot height a value occupies. `scaleMax` is guaranteed > 0. */
   const norm = (v: number): number => Math.max(0, Math.min(1, v / series.scaleMax));
@@ -268,9 +278,7 @@ export function renderWave(opts: WaveOptions): string {
     height: g.height - g.top - g.bottom,
   };
 
-  const n = series.points.length;
-  const xAt = (i: number): number =>
-    n <= 1 ? rect.x + rect.width / 2 : rect.x + (i * rect.width) / (n - 1);
+  const xAt = xAtFor(rect, series.points.length);
 
   const ticks = monthTicks(series.points, xAt)
     .map((tick) => textEl(tick.x, g.height - g.bottom + 16, tick.label, t.textDim, 9, 'middle'))
