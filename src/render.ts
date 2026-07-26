@@ -1,7 +1,7 @@
 import { areaPath, bandPath, catmullRomPath, round } from './curve.js';
 import type { Point } from './curve.js';
-import { FONT_STACK } from './themes.js';
-import type { Theme } from './themes.js';
+import { ALL_GUTTER, ALL_ROW_HEIGHT, allYearsHeight, FONT_STACK } from './themes.js';
+import type { Geometry, Theme } from './themes.js';
 import type { PlotPoint, PlotSeries } from './transform.js';
 
 const MONTH_NAMES = [
@@ -220,4 +220,133 @@ function peakMarkers(
       );
     })
     .join('');
+}
+
+export interface WaveOptions {
+  series: PlotSeries;
+  theme: Theme;
+  username: string;
+  mirror: boolean;
+  geometry: Geometry;
+  /** Human description used in the accessible title, e.g. "Trailing year". */
+  label: string;
+}
+
+function svgOpen(width: number, height: number, title: string): string {
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" ` +
+    `preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeXml(title)}">` +
+    `<title>${escapeXml(title)}</title>` +
+    `<style>${ANIMATION_CSS}</style>`
+  );
+}
+
+function textEl(
+  x: number,
+  y: number,
+  content: string,
+  fill: string,
+  size: number,
+  anchor = 'start',
+): string {
+  return (
+    `<text x="${round(x)}" y="${round(y)}" text-anchor="${anchor}" font-family="${FONT_STACK}" ` +
+    `font-size="${size}" fill="${fill}">${content}</text>`
+  );
+}
+
+function footer(username: string, total: number, from: string, to: string): string {
+  return `@${escapeXml(username)} · ${total} contributions · ${escapeXml(from)} – ${escapeXml(to)}`;
+}
+
+export function renderWave(opts: WaveOptions): string {
+  const { series, theme: t, username, mirror, geometry: g, label } = opts;
+  const rect: PanelRect = {
+    x: g.left,
+    y: g.top,
+    width: g.width - g.left - g.right,
+    height: g.height - g.top - g.bottom,
+  };
+
+  const n = series.points.length;
+  const xAt = (i: number): number =>
+    n <= 1 ? rect.x + rect.width / 2 : rect.x + (i * rect.width) / (n - 1);
+
+  const ticks = monthTicks(series.points, xAt)
+    .map((tick) => textEl(tick.x, g.height - g.bottom + 16, tick.label, t.textDim, 9, 'middle'))
+    .join('');
+
+  const title = `${label} of GitHub contributions for ${username} as a waveform`;
+
+  return [
+    svgOpen(g.width, g.height, title),
+    `<rect width="${g.width}" height="${g.height}" fill="${t.bg}"/>`,
+    renderPanel({ series, theme: t, mirror, rect, idPrefix: 'w', showPeaks: true }),
+    ticks,
+    textEl(g.width - g.right, g.top - 10, `max ${series.max}`, t.textDim, 9, 'end'),
+    textEl(g.left, g.height - 12, footer(username, series.total, series.from, series.to), t.text, 10),
+    '</svg>',
+  ].join('');
+}
+
+export interface YearRow {
+  year: number;
+  series: PlotSeries;
+}
+
+export interface AllYearsOptions {
+  rows: YearRow[];
+  theme: Theme;
+  username: string;
+  mirror: boolean;
+  total: number;
+  from: string;
+  to: string;
+}
+
+export function renderAllYears(opts: AllYearsOptions): string {
+  const { rows, theme: t, username, mirror, total, from, to } = opts;
+  const height = allYearsHeight(rows.length);
+  const width = 880;
+  const right = 20;
+  const top = 20;
+  const plotWidth = width - ALL_GUTTER - right;
+
+  const panels = rows
+    .map((row, i) => {
+      const rect: PanelRect = {
+        x: ALL_GUTTER,
+        y: top + i * ALL_ROW_HEIGHT,
+        width: plotWidth,
+        height: ALL_ROW_HEIGHT - 8,
+      };
+      const label = textEl(
+        ALL_GUTTER - 10,
+        rect.y + rect.height / 2 + 3,
+        String(row.year),
+        t.textDim,
+        10,
+        'end',
+      );
+      const panel = renderPanel({
+        series: row.series,
+        theme: t,
+        mirror,
+        rect,
+        idPrefix: `y${row.year}`,
+        showPeaks: false,
+      });
+      return label + panel;
+    })
+    .join('');
+
+  const title = `All years of GitHub contributions for ${username} as a waveform`;
+
+  return [
+    svgOpen(width, height, title),
+    `<rect width="${width}" height="${height}" fill="${t.bg}"/>`,
+    panels,
+    textEl(ALL_GUTTER, height - 14, footer(username, total, from, to), t.text, 10),
+    '</svg>',
+  ].join('');
 }

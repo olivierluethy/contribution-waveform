@@ -290,3 +290,127 @@ describe('ANIMATION_CSS', () => {
     expect(ANIMATION_CSS).not.toMatch(/@import|url\(|http/);
   });
 });
+
+import { renderAllYears, renderWave } from '../src/render.js';
+import { MONTH_GEOMETRY, allYearsHeight } from '../src/themes.js';
+
+describe('renderWave', () => {
+  const base = {
+    theme: T,
+    username: 'olivierluethy',
+    mirror: true,
+    geometry: YEAR_GEOMETRY,
+    label: 'Trailing year',
+  };
+
+  it('emits a well-formed self-contained root element', () => {
+    const svg = renderWave({ ...base, series: series([1, 5, 2, 8, 3]) });
+    expect(svg.startsWith('<svg ')).toBe(true);
+    expect(svg.trimEnd().endsWith('</svg>')).toBe(true);
+    expect(svg).toContain('xmlns="http://www.w3.org/2000/svg"');
+    expect(svg).toContain('viewBox="0 0 880 220"');
+    expect(svg).toContain('preserveAspectRatio="xMidYMid meet"');
+  });
+
+  it('sets no width or height on the root so the README can scale it', () => {
+    const svg = renderWave({ ...base, series: series([1, 2, 3]) });
+    const root = svg.slice(0, svg.indexOf('>'));
+    expect(root).not.toMatch(/\swidth=/);
+    expect(root).not.toMatch(/\sheight=/);
+  });
+
+  it('uses the month viewBox for the month geometry', () => {
+    const svg = renderWave({ ...base, geometry: MONTH_GEOMETRY, series: series([1, 2, 3]) });
+    expect(svg).toContain('viewBox="0 0 880 160"');
+  });
+
+  it('writes the footer line', () => {
+    const svg = renderWave({ ...base, series: series([2, 3, 4]) });
+    expect(svg).toContain('@olivierluethy');
+    expect(svg).toContain('9 contributions');
+    expect(svg).toContain('2024-01-01');
+    expect(svg).toContain('2024-01-03');
+  });
+
+  it('writes a subtle max label and no y gridlines', () => {
+    const svg = renderWave({ ...base, series: series([1, 2, 30]) });
+    expect(svg).toContain('max 30');
+    expect(svg).not.toContain('<line');
+  });
+
+  it('escapes a username containing XML metacharacters', () => {
+    const svg = renderWave({ ...base, username: 'a<b&c', series: series([1, 2]) });
+    expect(svg).toContain('@a&lt;b&amp;c');
+    expect(svg).not.toContain('@a<b&c');
+  });
+
+  it('renders a zero-contribution user without non-finite numbers', () => {
+    const svg = renderWave({ ...base, series: series(Array.from({ length: 365 }, () => 0)) });
+    expect(svg).not.toMatch(NON_FINITE);
+    expect(svg).toContain('0 contributions');
+  });
+
+  it('renders an empty series without throwing', () => {
+    const svg = renderWave({ ...base, series: series([]) });
+    expect(svg).toContain('</svg>');
+    expect(svg).not.toMatch(NON_FINITE);
+  });
+
+  it('includes the inline animation stylesheet', () => {
+    const svg = renderWave({ ...base, series: series([1, 2, 3]) });
+    expect(svg).toContain('<style>');
+    expect(svg).toContain('@keyframes wf-draw');
+  });
+
+  it('carries an accessible title', () => {
+    const svg = renderWave({ ...base, series: series([1, 2, 3]) });
+    expect(svg).toContain('<title>');
+    expect(svg).toContain('role="img"');
+  });
+});
+
+describe('renderAllYears', () => {
+  const rows = [
+    { year: 2023, series: series(Array.from({ length: 200 }, (_, i) => i % 5), '2023-01-01') },
+    { year: 2024, series: series(Array.from({ length: 200 }, (_, i) => i % 7), '2024-01-01') },
+  ];
+  const base = {
+    rows,
+    theme: T,
+    username: 'olivierluethy',
+    mirror: true,
+    total: 1234,
+    from: '2023-01-01',
+    to: '2024-07-18',
+  };
+
+  it('grows the viewBox height with the year count', () => {
+    expect(renderAllYears(base)).toContain(`viewBox="0 0 880 ${allYearsHeight(2)}"`);
+  });
+
+  it('labels every year on the left', () => {
+    const svg = renderAllYears(base);
+    expect(svg).toContain('>2023<');
+    expect(svg).toContain('>2024<');
+  });
+
+  it('gives each row its own clip path namespace', () => {
+    const svg = renderAllYears(base);
+    expect(svg).toContain('id="y2023-above"');
+    expect(svg).toContain('id="y2024-above"');
+  });
+
+  it('shows the combined total in the footer', () => {
+    expect(renderAllYears(base)).toContain('1234 contributions');
+  });
+
+  it('emits no non-finite numbers', () => {
+    expect(renderAllYears(base)).not.toMatch(NON_FINITE);
+  });
+
+  it('renders with no rows at all', () => {
+    const svg = renderAllYears({ ...base, rows: [], total: 0 });
+    expect(svg).toContain('</svg>');
+    expect(svg).not.toMatch(NON_FINITE);
+  });
+});
