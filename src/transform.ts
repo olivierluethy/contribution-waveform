@@ -186,5 +186,14 @@ export function downsample(series: PlotSeries, factor: number): PlotSeries {
     });
   }
 
-  return { ...series, points, peaks: [] };
+  // Bucket means are systematically smaller than the daily 98th percentile, so
+  // carrying the original scaleMax through would leave every row under-filled
+  // and nearly flat. Rescale to the downsampled distribution. Averaging has
+  // already removed the outliers a percentile clamp exists to suppress, so the
+  // true peak is the right ceiling here — it fills the row without clipping
+  // any drawn value. Never 0, which would divide by zero downstream.
+  const peak = points.reduce((m, p) => Math.max(m, p.clamped, p.avg7, p.avg30), 0);
+  const scaleMax = peak > 0 ? peak : 1;
+
+  return { ...series, points, scaleMax, peaks: [] };
 }

@@ -270,14 +270,39 @@ describe('downsample', () => {
     expect(downsample(s, 2).peaks).toEqual([]);
   });
 
-  it('carries scaleMax, max, total, from and to through unchanged', () => {
+  it('carries max, total, from and to through unchanged', () => {
     const s = seriesOf([point('2024-01-01', 3), point('2024-01-02', 5)]);
     const out = downsample(s, 2);
-    expect(out.scaleMax).toBe(s.scaleMax);
     expect(out.max).toBe(s.max);
     expect(out.total).toBe(s.total);
     expect(out.from).toBe(s.from);
     expect(out.to).toBe(s.to);
+  });
+
+  it('rescales scaleMax to the downsampled peak so the row is not under-filled', () => {
+    // Bucket means are far below the daily-resolution scaleMax of 100. Carrying
+    // it through would draw this row as a nearly flat line.
+    const s = seriesOf([point('2024-01-01', 3), point('2024-01-02', 5)]);
+    const out = downsample(s, 2);
+    expect(s.scaleMax).toBe(100);
+    expect(out.scaleMax).toBe(4); // mean of 3 and 5, the largest drawn value
+  });
+
+  it('never lets a drawn value exceed the rescaled scaleMax', () => {
+    // avg30 is the largest drawn field for these points; scaleMax must cover it,
+    // otherwise the curve would be drawn outside its panel.
+    const s = seriesOf([point('2024-01-01', 2, 1), point('2024-01-02', 4, 1)]);
+    const out = downsample(s, 2);
+    for (const p of out.points) {
+      expect(p.clamped).toBeLessThanOrEqual(out.scaleMax);
+      expect(p.avg7).toBeLessThanOrEqual(out.scaleMax);
+      expect(p.avg30).toBeLessThanOrEqual(out.scaleMax);
+    }
+  });
+
+  it('never returns a zero scaleMax for an all-zero series', () => {
+    const s = seriesOf([point('2024-01-01', 0), point('2024-01-02', 0)]);
+    expect(downsample(s, 2).scaleMax).toBe(1);
   });
 
   it('never produces NaN for a degenerate factor', () => {
