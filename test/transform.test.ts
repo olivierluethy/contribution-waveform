@@ -8,8 +8,8 @@ import {
   rollingAverage,
   scaleMaxFor,
   todayIn,
-} from '../src/transform.js';
-import type { PlotPoint, PlotSeries } from '../src/transform.js';
+} from '../lib/transform';
+import type { PlotPoint, PlotSeries } from '../lib/transform';
 
 describe('todayIn', () => {
   it('formats the local date in the given zone', () => {

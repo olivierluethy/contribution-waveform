@@ -108,15 +108,27 @@ export function findPeaks(points: PlotPoint[], count: number, minSeparation = 7)
  * history and sliced afterwards, so the left edge of a trailing-365 window is
  * seeded by the preceding month instead of ramping up from zero.
  */
+export interface BuildOptions {
+  /** Rolling-average window for the baseline band, in days. Defaults to 30. */
+  baselineWindow?: number;
+  /**
+   * Forces the y-axis ceiling instead of deriving it from this window. Used by
+   * the all-years view so every year row shares one scale and the rows are
+   * actually comparable to each other.
+   */
+  scaleMax?: number;
+}
+
 export function buildSeries(
   all: ContributionDay[],
   from: string,
   to: string,
   peakCount: number,
+  opts: BuildOptions = {},
 ): PlotSeries {
   const counts = all.map((d) => d.count);
   const avg7 = rollingAverage(counts, 7);
-  const avg30 = rollingAverage(counts, 30);
+  const avg30 = rollingAverage(counts, Math.max(1, opts.baselineWindow ?? 30));
 
   const indices: number[] = [];
   for (let i = 0; i < all.length; i++) {
@@ -125,7 +137,7 @@ export function buildSeries(
   }
 
   const windowCounts = indices.map((i) => counts[i]!);
-  const scaleMax = scaleMaxFor(windowCounts);
+  const scaleMax = opts.scaleMax && opts.scaleMax > 0 ? opts.scaleMax : scaleMaxFor(windowCounts);
 
   const points: PlotPoint[] = indices.map((i) => ({
     date: all[i]!.date,

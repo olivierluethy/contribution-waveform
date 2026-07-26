@@ -1,146 +1,167 @@
 # Contribution Waveform
 
-GitHub contribution history rendered as a continuous waveform instead of a grid
-of squares. Regenerated daily by a scheduled Action, served as a self-contained
-SVG, and embeddable in a profile README.
+Your GitHub contribution history as a **smooth waveform** instead of a grid of
+squares. A self-hosted badge service: the SVG is generated on every request, so
+it is always current, and it works for any username.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)"
-          srcset="https://olivierluethy.github.io/contribution-waveform/wave-year-dark.svg">
-  <source media="(prefers-color-scheme: light)"
-          srcset="https://olivierluethy.github.io/contribution-waveform/wave-year-light.svg">
-  <img alt="My GitHub contributions as a waveform"
-       src="https://olivierluethy.github.io/contribution-waveform/wave-year-dark.svg">
-</picture>
+[![GitHub Contribution Waveform](https://contribution-waveform.vercel.app/api/wave?user=olivierluethy)](https://github.com/olivierluethy)
 
-## What you are looking at
+```markdown
+[![GitHub Contribution Waveform](https://contribution-waveform.vercel.app/api/wave?user=olivierluethy)](https://github.com/olivierluethy)
+```
 
-Four layers. The deviation fill sits behind the two lines so the wave outline
-stays crisp:
+Try it and build a URL on the [demo site](https://contribution-waveform.vercel.app).
 
-1. **Baseline band** — the rolling 30-day average. "Normally I do about this much."
-2. **Deviation fill** — the area between the daily curve and the 30-day
-   baseline. Accent where the day beat its average, muted where it fell short.
-3. **7-day average** — a thin smoothed line.
-4. **Daily series** — the actual per-day count, smoothed with a Catmull-Rom
-   spline converted to cubic Béziers.
+## What the graph shows
 
-Peak markers sit on top: a dot on each of the top N days, with the count
-labelled in the margin above the plot.
+Four layers, back to front. The deviation fill sits behind the strokes so the
+wave outline stays crisp:
 
-The wave is mirrored around a centre axis for an audio-waveform look. The
-baseline envelope is mirrored too, so the deviation fill keeps its meaning.
+1. **Baseline band** — your rolling `baseline`-day average. The "this is my
+   normal level" reference.
+2. **Deviation fill** — the area between the daily curve and that baseline,
+   `fill_above` where the day beat your average and `fill_below` where it fell
+   short. This is what makes an unusually busy week readable at a glance.
+3. **7-day rolling average** — a thin smoothed line.
+4. **Daily series** — your actual per-day count, smoothed with a Catmull-Rom
+   spline. This is the wave.
 
-The Y axis is scaled to the **98th percentile** of the period rather than the
-maximum, so a single 200-commit day cannot flatten the rest of the year.
-Anything above is clipped. There are no gridlines and no Y numbers — just a
-`max` label in the corner.
+Peak markers sit on top: a dot on each of the busiest days, counted in the
+margin above the plot.
 
-## Generated files
+The y-axis is scaled to the **98th percentile** of the period rather than the
+maximum, and clipped above it. Without that, one 200-commit day flattens the
+whole rest of the year into a straight line.
 
-| File | Content |
-|---|---|
-| `wave-year-dark.svg` / `-light` | Trailing 365 days |
-| `wave-month-dark.svg` / `-light` | Trailing 31 days |
-| `wave-all-dark.svg` / `-light` | Every year, one wave per row |
+## Endpoint
 
-All six live at `https://olivierluethy.github.io/contribution-waveform/`.
+```
+GET /api/wave?user=<username>
+```
 
-The all-years rows are downsampled to weekly points — at 44px per row, daily
-resolution is neither legible nor worth the bytes. The year and month views keep
-full daily detail.
+`/wave?user=…` works too.
 
-## Embedding
+### Options
+
+| Param | Default | Values |
+|---|---|---|
+| `user` | — | **required.** GitHub username, `^[A-Za-z0-9-]{1,39}$` |
+| `range` | `year` | `year` (trailing 365 d), `month` (trailing 31 d), `all` (one stacked wave per year since account creation) |
+| `theme` | `dark` | `dark`, `light`, `github-dark`, `github-light`, `radical`, `nord` |
+| `mirror` | `false` | `true` mirrors the wave around the centre axis for an audio-waveform look |
+| `smoothing` | `0.5` | `0`–`1`, Catmull-Rom tension |
+| `baseline` | `30` | rolling-average window in days; `0` removes the band and the deviation fill |
+| `peaks` | `3` | labelled peak markers, `0` disables |
+| `hide_border` | `false` | `true` / `false` |
+| `border_radius` | `6` | number |
+| `background` | theme | hex without `#`, a CSS colour name, or a gradient `angle,c1,…,cN` |
+| `line` | theme | wave stroke — hex without `#` or CSS colour name |
+| `fill_above` | theme | above-average deviation fill |
+| `fill_below` | theme | below-average deviation fill |
+| `text` | theme | header, footer and label colour |
+| `card_width` | `495` | px, min `300` |
+| `card_height` | `195` | px, min `120` |
+| `disable_animations` | `false` | `true` removes the draw-in animation entirely |
+| `locale` | `en` | ISO 639-1, used for month labels and number formatting |
+| `type` | `svg` | `svg`, or `json` to get the computed series and stats back |
+
+Explicit colour parameters override the theme. Unknown parameters are ignored
+rather than rejected, so a URL that picks up a stray param still renders.
+
+### Examples
+
+```markdown
+![](https://contribution-waveform.vercel.app/api/wave?user=olivierluethy&mirror=true)
+![](https://contribution-waveform.vercel.app/api/wave?user=olivierluethy&theme=nord&range=month)
+![](https://contribution-waveform.vercel.app/api/wave?user=olivierluethy&range=all&card_height=260)
+![](https://contribution-waveform.vercel.app/api/wave?user=olivierluethy&background=45,141321,7c3aed&hide_border=true)
+```
+
+### Theme-aware embed
+
+`<picture>` renders in a README and adapts to the reader's GitHub theme:
 
 ```html
 <picture>
   <source media="(prefers-color-scheme: dark)"
-          srcset="https://olivierluethy.github.io/contribution-waveform/wave-year-dark.svg">
+          srcset="https://contribution-waveform.vercel.app/api/wave?user=olivierluethy&theme=github-dark">
   <source media="(prefers-color-scheme: light)"
-          srcset="https://olivierluethy.github.io/contribution-waveform/wave-year-light.svg">
-  <img alt="My GitHub contributions as a waveform"
-       src="https://olivierluethy.github.io/contribution-waveform/wave-year-dark.svg">
+          srcset="https://contribution-waveform.vercel.app/api/wave?user=olivierluethy&theme=github-light">
+  <img alt="GitHub Contribution Waveform"
+       src="https://contribution-waveform.vercel.app/api/wave?user=olivierluethy&theme=github-dark">
 </picture>
 ```
 
-Or the simpler Markdown form, which locks to one theme:
+## Self-hosting
 
-```markdown
-![My GitHub contributions as a waveform](https://olivierluethy.github.io/contribution-waveform/wave-year-dark.svg)
-```
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Folivierluethy%2Fcontribution-waveform&env=TOKEN&envDescription=A%20GitHub%20classic%20PAT%20with%20no%20scopes)
 
-## Use it for your own account
-
-1. Fork this repository.
-2. Set `username` in `waveform.config.json` to your GitHub handle.
-3. Add a repository secret `GH_PAT` — a classic PAT with the `read:user` scope.
-4. Enable Pages with **GitHub Actions** as the source.
-5. Run the **Build waveform** workflow once by hand.
-
-Swap `olivierluethy/contribution-waveform` for your own user and repo in every
-URL above.
+1. Fork this repository and deploy it to Vercel. It is one Next.js project —
+   the SVG endpoint and the demo site ship together.
+2. Set `TOKEN` to a GitHub **classic Personal Access Token with no scopes**.
+   Public contribution calendars need no scopes at all; the token exists only
+   because the GraphQL v4 API rejects unauthenticated requests.
+   Comma-separate several tokens to raise the effective rate limit — each
+   carries its own 5,000 requests/hour and the client round-robins between them.
+3. Optionally set `WHITELIST` to a comma-separated list of usernames, so a
+   public URL cannot burn your quota rendering cards for strangers.
 
 ## Caveats
 
-**Private contributions.** They appear only if the `GH_PAT` secret has the
-`read:user` scope *and* "Include private contributions on my profile" is enabled
-in your GitHub settings. Without both, the wave shows public activity only.
+**Private contributions** only appear if the *viewed user* has enabled "Include
+private contributions on my profile" in their GitHub settings. There is no way
+around that from outside, and this service does not try.
 
-**Camo caching.** GitHub proxies README images through camo and caches them for
-a few hours. Your embed updates roughly once a day. This is expected; the tool
-does not try to defeat the cache.
+**Caching.** Three caches sit between the function and your README: Vercel's
+CDN, the browser, and GitHub's camo image proxy. Cards are served with
+`max-age=1800, s-maxage=1800, stale-while-revalidate=86400`, but camo caches on
+top of that with its own floor. Expect your badge to update on the order of
+hours, not seconds. Cache-busting query strings do not defeat camo — they just
+burn API quota.
 
-**Why this cannot work for arbitrary usernames.** GitHub Pages is static
-hosting — there is no server-side code and no request-time SVG generation. A URL
-like `.../wave.svg?user=someone` cannot exist, because nothing runs to answer it.
-Every embeddable file must be generated ahead of time and committed. So the repo
-is configured for exactly one username, and anyone else forks it and sets their
-own. A serverless variant (a small function that renders on demand and caches)
-would lift that limit, but it is deliberately **not implemented here** — it needs
-hosting outside GitHub Pages.
+**Errors render as cards, not status codes.** A 4xx or 5xx makes GitHub show a
+broken-image icon, which tells a reader nothing. A failure returns HTTP 200 with
+a card that says what went wrong, and `no-store` so it is not pinned in a cache.
 
-## Configuration
+## Why an image, and why no interactivity
 
-```json
-{
-  "username": "olivierluethy",
-  "timezone": "Europe/Zurich",
-  "peakMarkers": 3,
-  "mirror": true,
-  "accent": "#7c3aed"
-}
+A GitHub README sanitizes all HTML — no `<script>`, `<iframe>`, `<canvas>`,
+`<style>` blocks or event handlers survive. The only element that renders is an
+image. So the output is an SVG document served with `image/svg+xml`, and hover
+tooltips are impossible in a README no matter how they are implemented. The demo
+site is a normal web page, so it has no such limit.
+
+## How it is built
+
+Next.js App Router on Vercel. The SVG endpoint runs on the **edge runtime** — it
+is pure `fetch` plus string building, needing no Node APIs — because camo gives
+up on a slow response and shows a broken image. No charting library; the SVG is
+emitted as strings and the curve maths is hand-rolled.
+
 ```
+app/page.tsx          demo site
+app/api/wave/route.ts edge handler
+lib/params.ts         zod schema, defaults, colour and gradient parsing
+lib/github.ts         GraphQL client, parallel year windows, token rotation
+lib/transform.ts      rolling averages, percentile clamp, downsampling
+lib/curve.ts          Catmull-Rom → cubic Bézier
+lib/render/card.ts    frame, header, footer, border, gradients
+lib/render/wave.ts    the layers above
+lib/render/error.ts   error card
+lib/themes.ts         the six palettes
+```
+
+Everything interpolated into the SVG is XML-escaped — a username is
+user-controlled input landing in a document. The generated output contains no
+`<script>`, no `<foreignObject>`, no external `href`, no `@import` and no
+`http://` reference beyond the mandatory XML namespace identifier.
 
 ## Development
 
 ```bash
 npm install
-npm test                          # unit, sanitizer and snapshot tests
-npm run fetch                     # needs GITHUB_TOKEN
-npm run build -- --offline        # rebuild SVGs from data/contributions.json
-npm run build -- --no-mirror      # unmirrored variant
-npm run build:site                # Vite + Tailwind site into site-dist/
+cp .env.example .env    # add a TOKEN
+npm run dev             # http://localhost:3000
+npm run typecheck
+npm test
 ```
-
-`--offline` builds entirely from the committed `data/contributions.json`, so
-rendering changes can be tested and diffed without API access.
-
-## How it is built
-
-TypeScript, Node 20+, ESM. No charting library — SVG is emitted as strings and
-the curve maths is hand-rolled. The only runtime dependency is `zod`, for config
-validation.
-
-```
-src/config.ts     zod-validated config
-src/fetch.ts      GraphQL v4 client, year-by-year pagination
-src/transform.ts  rolling averages, percentile clamp, normalisation
-src/curve.ts      Catmull-Rom to cubic Bézier
-src/render.ts     SVG string composition
-src/themes.ts     dark and light colour tokens
-src/cli.ts        fetch / build / --offline / --mirror
-```
-
-Generated SVGs contain no `<script>`, no `<foreignObject>`, no external fonts
-and no external references of any kind — a sanitizer test enforces this on every
-build, because GitHub strips almost everything else from a README.

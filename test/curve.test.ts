@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaPath, bandPath, catmullRomPath, round } from '../src/curve.js';
+import { areaPath, bandPath, catmullRomPath, round } from '../lib/curve';
 
 const NON_FINITE = /NaN|Infinity|undefined/;
 
