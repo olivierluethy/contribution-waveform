@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   addDays,
   buildSeries,
+  downsample,
   findPeaks,
   percentile,
   rollingAverage,
   scaleMaxFor,
   todayIn,
 } from '../src/transform.js';
-import type { PlotPoint } from '../src/transform.js';
+import type { PlotPoint, PlotSeries } from '../src/transform.js';
 
 describe('todayIn', () => {
   it('formats the local date in the given zone', () => {
@@ -190,5 +191,105 @@ describe('buildSeries', () => {
     expect(series.scaleMax).toBe(1);
     expect(series.from).toBe('2024-01-01');
     expect(series.to).toBe('2024-12-31');
+  });
+});
+
+describe('downsample', () => {
+  /** A point where every drawn field is deliberately distinct from `count`, so a test that reads the wrong field fails loudly. */
+  function point(date: string, count: number, offset = 0): PlotPoint {
+    return { date, count, clamped: count + offset, avg7: count + offset * 2, avg30: count + offset * 3 };
+  }
+
+  function seriesOf(points: PlotPoint[]): PlotSeries {
+    return {
+      points,
+      scaleMax: 100,
+      max: 42,
+      total: 999,
+      from: '2024-01-01',
+      to: '2024-12-31',
+      peaks: points.length > 0 ? [{ index: 0, date: points[0]!.date, count: points[0]!.count }] : [],
+    };
+  }
+
+  it('buckets an exact multiple: sums count, averages the drawn fields', () => {
+    const s = seriesOf([
+      point('2024-01-01', 2, 1),
+      point('2024-01-02', 4, 1),
+      point('2024-01-03', 6, 1),
+      point('2024-01-04', 8, 1),
+    ]);
+    const out = downsample(s, 2);
+    expect(out.points).toEqual([
+      { date: '2024-01-01', count: 6, clamped: 4, avg7: 5, avg30: 6 },
+      { date: '2024-01-03', count: 14, clamped: 8, avg7: 9, avg30: 10 },
+    ]);
+  });
+
+  it('keeps a trailing partial bucket, averaged over its own (smaller) size', () => {
+    const s = seriesOf([
+      point('2024-01-01', 2, 0),
+      point('2024-01-02', 4, 0),
+      point('2024-01-03', 9, 0),
+    ]);
+    const out = downsample(s, 2);
+    expect(out.points).toHaveLength(2);
+    // The trailing bucket has one point: averaging over 1 (not 2) keeps its
+    // value exact rather than halving it.
+    expect(out.points[1]).toEqual({ date: '2024-01-03', count: 9, clamped: 9, avg7: 9, avg30: 9 });
+  });
+
+  it('is the identity at factor 1 (aside from clearing peaks)', () => {
+    const s = seriesOf([point('2024-01-01', 3), point('2024-01-02', 5)]);
+    const out = downsample(s, 1);
+    expect(out.points).toEqual(s.points);
+  });
+
+  it('treats factor <= 1 (0, negative) the same as factor 1', () => {
+    const s = seriesOf([point('2024-01-01', 3), point('2024-01-02', 5)]);
+    expect(downsample(s, 0).points).toEqual(s.points);
+    expect(downsample(s, -5).points).toEqual(s.points);
+  });
+
+  it('handles an empty series without throwing', () => {
+    const out = downsample(seriesOf([]), 7);
+    expect(out.points).toEqual([]);
+    expect(out.peaks).toEqual([]);
+  });
+
+  it('handles a series shorter than one bucket as a single partial bucket', () => {
+    const s = seriesOf([point('2024-01-01', 3), point('2024-01-02', 5)]);
+    const out = downsample(s, 7);
+    expect(out.points).toHaveLength(1);
+    expect(out.points[0]).toEqual({ date: '2024-01-01', count: 8, clamped: 4, avg7: 4, avg30: 4 });
+  });
+
+  it('clears peaks, since their indices would refer to the wrong (pre-bucketed) points', () => {
+    const s = seriesOf([point('2024-01-01', 3), point('2024-01-02', 5), point('2024-01-03', 9)]);
+    expect(s.peaks).not.toEqual([]);
+    expect(downsample(s, 2).peaks).toEqual([]);
+  });
+
+  it('carries scaleMax, max, total, from and to through unchanged', () => {
+    const s = seriesOf([point('2024-01-01', 3), point('2024-01-02', 5)]);
+    const out = downsample(s, 2);
+    expect(out.scaleMax).toBe(s.scaleMax);
+    expect(out.max).toBe(s.max);
+    expect(out.total).toBe(s.total);
+    expect(out.from).toBe(s.from);
+    expect(out.to).toBe(s.to);
+  });
+
+  it('never produces NaN for a degenerate factor', () => {
+    const s = seriesOf([point('2024-01-01', 3)]);
+    for (const bad of [0, -5, NaN, Infinity, -Infinity]) {
+      const out = downsample(s, bad);
+      for (const p of out.points) {
+        expect(Number.isNaN(p.count)).toBe(false);
+        expect(Number.isNaN(p.clamped)).toBe(false);
+        expect(Number.isNaN(p.avg7)).toBe(false);
+        expect(Number.isNaN(p.avg30)).toBe(false);
+      }
+    }
   });
 });

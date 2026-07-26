@@ -6,7 +6,7 @@ import type { ContributionData } from './fetch.js';
 import { renderAllYears, renderWave } from './render.js';
 import type { YearRow } from './render.js';
 import { MONTH_GEOMETRY, YEAR_GEOMETRY, theme } from './themes.js';
-import { addDays, buildSeries, todayIn } from './transform.js';
+import { addDays, buildSeries, downsample, todayIn } from './transform.js';
 
 const CACHE_PATH = 'data/contributions.json';
 
@@ -78,9 +78,13 @@ export async function buildAll(
   const yearSeries = buildSeries(data.days, addDays(today, -364), today, peakMarkers);
   const monthSeries = buildSeries(data.days, addDays(today, -30), today, peakMarkers);
 
+  // The all-years view is one 44px-tall, ~828px-wide row per year — roughly
+  // 2.3px per daily point, which is visual mush as well as unnecessary file
+  // weight. Downsample to weekly points; the year and month views above keep
+  // full daily resolution since the year view is the primary embed.
   const rows: YearRow[] = yearsIn(data).map((year) => ({
     year,
-    series: buildSeries(data.days, `${year}-01-01`, `${year}-12-31`, 0),
+    series: downsample(buildSeries(data.days, `${year}-01-01`, `${year}-12-31`, 0), 7),
   }));
   const allTotal = data.days.reduce((sum, d) => sum + d.count, 0);
   const allFrom = data.days[0]?.date ?? today;

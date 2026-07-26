@@ -145,3 +145,46 @@ export function buildSeries(
     peaks: findPeaks(points, peakCount),
   };
 }
+
+/**
+ * Groups consecutive points into buckets of `factor` and averages the drawn
+ * fields within each bucket — a statistics operation for views (the
+ * all-years row) where daily resolution is more points than the pixel width
+ * can usefully show.
+ *
+ * `clamped`, `avg7` and `avg30` are averaged (they are the values that get
+ * drawn); `count` is summed (it is a total, not a rate); `date` is the first
+ * date in the bucket. A trailing partial bucket is kept — never dropped or
+ * padded — and averaged/summed over its own, smaller size.
+ *
+ * `scaleMax`, `max`, `total`, `from` and `to` describe the whole window and
+ * are carried through unchanged. `peaks` always comes back empty: its
+ * indices refer to positions in the *original* (pre-bucketed) points array
+ * and would silently point at the wrong bucket otherwise — and the one
+ * caller of this function (the all-years view) never renders peaks anyway.
+ *
+ * `factor <= 1` (including 0, negative, or non-finite input) is treated as
+ * a no-op bucket size of 1, so the result is the input points unchanged
+ * (aside from `peaks`) rather than throwing or dividing by zero.
+ */
+export function downsample(series: PlotSeries, factor: number): PlotSeries {
+  const step = Number.isFinite(factor) && factor > 1 ? Math.floor(factor) : 1;
+
+  const points: PlotPoint[] = [];
+  for (let i = 0; i < series.points.length; i += step) {
+    const bucket = series.points.slice(i, i + step);
+    const n = bucket.length;
+    const sum = (pick: (p: PlotPoint) => number) =>
+      bucket.reduce((total, p) => total + pick(p), 0);
+
+    points.push({
+      date: bucket[0]!.date,
+      count: sum((p) => p.count),
+      clamped: sum((p) => p.clamped) / n,
+      avg7: sum((p) => p.avg7) / n,
+      avg30: sum((p) => p.avg30) / n,
+    });
+  }
+
+  return { ...series, points, peaks: [] };
+}
