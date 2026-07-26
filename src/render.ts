@@ -210,13 +210,24 @@ function peakMarkers(
 ): string {
   if (series.peaks.length === 0) return '';
 
+  // Peak dots sit at the 98th-percentile ceiling, i.e. right on the plot's
+  // top edge — a label pulled down toward the dot (the old behaviour) lands
+  // in the densest part of the wave, where the daily/7-day strokes cut
+  // straight through the digits. Draw it in the top margin instead, clear of
+  // the plot entirely. `rect.y` is both the plot's top edge and the size of
+  // the margin above it (the canvas starts at y=0), so a small offset from
+  // it works for any panel — year, month, or otherwise — rather than a
+  // constant tuned to one geometry's inset. The offset is kept small so the
+  // label stays close to the plot edge, leaving the top of the margin (where
+  // `renderWave` draws the "max N" corner label) clear.
+  const labelY = Math.max(9, rect.y - 4);
+
   return series.peaks
     .map((peak) => {
       const point = series.points[peak.index];
       if (!point) return '';
       const x = xAt(peak.index);
       const y = yAt(point.clamped);
-      const labelY = Math.max(rect.y + 8, y - 7);
 
       // Keep the label inside the panel by flipping its anchor near the edges.
       let anchor = 'middle';
