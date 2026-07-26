@@ -1415,7 +1415,10 @@ export function renderPanel(opts: PanelOptions): string {
       `<path class="wf-fade" d="${bandPath(baseUp, baseDown)}" fill="${t.band}" fill-opacity="${t.bandOpacity}"/>`,
     );
 
-    // 4. deviation fill, both halves, each split above/below by clip
+    // 2. deviation fill, both halves, each split above/below by clip. Painted
+    // before the 7-day and daily strokes: the fill's top edge is the daily
+    // curve itself, so drawing it on top would lay accent across the wave's
+    // own stroke and mute the outline.
     const upperBand = bandPath(dailyUp, baseUp);
     const lowerBand = bandPath(baseDown, dailyDown);
     parts.push(
@@ -1425,18 +1428,19 @@ export function renderPanel(opts: PanelOptions): string {
       `<path class="wf-fade" d="${lowerBand}" fill="${t.below}" fill-opacity="${t.belowOpacity}" clip-path="url(#${idPrefix}-below-m)"/>`,
     );
 
-    // 2. rolling 7-day line
+    // 3. rolling 7-day line
     parts.push(
       `<path d="${catmullRomPath(avg7Up)}" fill="none" stroke="${t.avg7}" stroke-width="1" stroke-opacity="0.7" class="wf-fade"/>`,
       `<path d="${catmullRomPath(avg7Down)}" fill="none" stroke="${t.avg7}" stroke-width="1" stroke-opacity="0.7" class="wf-fade"/>`,
     );
 
-    // 3. the wave itself
+    // 4. daily curve (the wave itself)
     parts.push(
       `<path class="wf-curve" pathLength="1000" d="${catmullRomPath(dailyUp)}" fill="none" stroke="${t.daily}" stroke-width="1.5" stroke-linecap="round"/>`,
       `<path class="wf-curve" pathLength="1000" d="${catmullRomPath(dailyDown)}" fill="none" stroke="${t.daily}" stroke-width="1.5" stroke-linecap="round"/>`,
     );
 
+    // 5. peak markers
     if (showPeaks) parts.push(peakMarkers(series, xAt, (p) => up(norm(p)), rect, t));
   } else {
     const toY = (f: number) => bottom - f * rect.height;
@@ -1449,18 +1453,32 @@ export function renderPanel(opts: PanelOptions): string {
       `<clipPath id="${idPrefix}-below"><path d="${areaPath(base, bottom)}"/></clipPath>`,
     );
 
+    // 1. baseline band
     parts.push(
       `<path class="wf-fade" d="${areaPath(base, bottom)}" fill="${t.band}" fill-opacity="${t.bandOpacity}"/>`,
     );
 
+    // 2. deviation fill, split above/below by clip. Painted before the
+    // 7-day and daily strokes: the fill's top edge is the daily curve
+    // itself, so drawing it on top would lay accent across the wave's own
+    // stroke and mute the outline.
     const band = bandPath(daily, base);
     parts.push(
       `<path class="wf-fade" d="${band}" fill="${t.above}" fill-opacity="${t.aboveOpacity}" clip-path="url(#${idPrefix}-above)"/>`,
       `<path class="wf-fade" d="${band}" fill="${t.below}" fill-opacity="${t.belowOpacity}" clip-path="url(#${idPrefix}-below)"/>`,
+    );
+
+    // 3. rolling 7-day line
+    parts.push(
       `<path d="${catmullRomPath(avg7)}" fill="none" stroke="${t.avg7}" stroke-width="1" stroke-opacity="0.7" class="wf-fade"/>`,
+    );
+
+    // 4. daily curve (the wave itself)
+    parts.push(
       `<path class="wf-curve" pathLength="1000" d="${catmullRomPath(daily)}" fill="none" stroke="${t.daily}" stroke-width="1.5" stroke-linecap="round"/>`,
     );
 
+    // 5. peak markers
     if (showPeaks) parts.push(peakMarkers(series, xAt, (p) => toY(norm(p)), rect, t));
   }
 
@@ -3203,11 +3221,13 @@ SVG, and embeddable in a profile README.
 Four layers, back to front:
 
 1. **Baseline band** — the rolling 30-day average. "Normally I do about this much."
-2. **7-day average** — a thin smoothed line.
-3. **Daily series** — the actual per-day count, smoothed with a Catmull-Rom
-   spline converted to cubic Béziers.
-4. **Deviation fill** — the area between the daily curve and the 30-day
+2. **Deviation fill** — the area between the daily curve and the 30-day
    baseline. Accent where the day beat its average, muted where it fell short.
+   Painted before the line layers, since its top edge is the daily curve
+   itself — filling over the curve would mute the wave's own stroke.
+3. **7-day average** — a thin smoothed line.
+4. **Daily series** — the actual per-day count, smoothed with a Catmull-Rom
+   spline converted to cubic Béziers.
 
 The wave is mirrored around a centre axis for an audio-waveform look. The
 baseline envelope is mirrored too, so the deviation fill keeps its meaning.

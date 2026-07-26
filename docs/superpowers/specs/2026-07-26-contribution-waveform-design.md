@@ -193,11 +193,16 @@ output string.
 ### Layer order, back to front
 
 1. **Baseline band** — rolling 30-day average as a soft filled band.
-2. **Rolling 7-day average** — thin smoothed line.
-3. **Daily series** — smoothed Catmull-Rom curve. The wave.
-4. **Deviation fill** — area between the daily curve and the 30-day baseline,
+2. **Deviation fill** — area between the daily curve and the 30-day baseline,
    accent where above average, muted where below.
+3. **Rolling 7-day average** — thin smoothed line.
+4. **Daily series** — smoothed Catmull-Rom curve. The wave.
 5. **Peak markers** — dots with count labels on the top N days.
+
+The deviation fill paints *before* the 7-day and daily strokes, not after.
+Its top edge is the daily curve itself, so painting it on top would lay a
+55%-opacity accent across the wave's own stroke and mute the outline —
+fill-behind-stroke is the conventional and more legible choice.
 
 ### Deviation fill technique
 
