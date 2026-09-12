@@ -1,5 +1,7 @@
 # Contribution Waveform
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Your GitHub contribution history as a **smooth waveform** instead of a grid of
 squares. A self-hosted badge service: the SVG is generated on every request, so
 it is always current, and it works for any username.
@@ -165,3 +167,12 @@ npm run dev             # http://localhost:3000
 npm run typecheck
 npm test
 ```
+
+## License
+
+Released under the [MIT License](LICENSE) © 2026 Olivier Lüthy. You're free to use, modify and distribute this
+software, including commercially, as long as the copyright notice and license are included.
+
+## Author
+
+Built by **Olivier Lüthy** — [GitHub](https://github.com/olivierluethy).
